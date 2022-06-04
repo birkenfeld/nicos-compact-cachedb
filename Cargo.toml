@@ -1,0 +1,10 @@
+[package]
+name = "nicos-compact-cachedb"
+authors = ["Georg Brandl <g.brandl@fz-juelich.de>"]
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+anyhow = "1.0.57"
+byteorder = "1.4.3"
+fs-err = "2.7.0"
