@@ -89,6 +89,7 @@ impl Default for Dicts {
         let mut vals = Dict::default();
         keys.max_index = u16::MAX as u32;
         vals.max_index = (1 << 30) - 1;
+        vals.index(b"-");
         Self { keys, vals }
     }
 }

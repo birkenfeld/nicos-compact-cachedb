@@ -44,10 +44,17 @@ impl DayFile {
     ) -> io::Result<()> {
         let mut msg = [0; 16];
         let length = value.len();
-        let mut firstfield = if length > 12 {
-            length as u32 | FLAG_LITERAL
-        } else {
+
+        let index_value = subkey == b"status" ||
+            subkey == b"_lastconfig_" ||
+            subkey == b"classes" ||
+            subkey == b"description" ||
+            length <= 4;
+
+        let mut firstfield = if index_value {
             dicts.value_index(value)
+        } else {
+            length as u32 | FLAG_LITERAL
         };
         if expiring {
             firstfield |= FLAG_EXPIRING;
@@ -58,7 +65,7 @@ impl DayFile {
         LE::write_u16(&mut msg[6..], skindex);
         LE::write_f64(&mut msg[8..], timestamp);
         self.file.write(&msg)?;
-        if length > 12 {
+        if !index_value {
             self.file.write(value)?;
         }
         Ok(())
