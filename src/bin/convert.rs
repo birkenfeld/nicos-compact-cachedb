@@ -98,10 +98,9 @@ fn process_day(ddir: &Path, outfile: &Path, dicts: &mut Dicts) -> Result<()> {
             read_storefile(file, |parts| {
                 let subkey = parts[0];
                 let subkeyindex = dicts.key_index(subkey.as_bytes());
-                let valueindex = dicts.value_index(parts[3].as_bytes());
                 let expiring = parts[2] == "-";
                 let timestamp = parts[1].parse().expect("valid timestamp");
-                dayfile.add_entry(catindex, subkeyindex, valueindex,
+                dayfile.add_entry(catindex, subkeyindex, parts[3].as_bytes(),
                                   timestamp, expiring).expect("adding succeeds");
             });
         }

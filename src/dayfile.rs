@@ -40,16 +40,19 @@ impl DayFile {
         Ok(Self { file: BufWriter::new(File::create(path)?) })
     }
 
-    pub fn add_entry(&mut self, catindex: u16, subkeyindex: u16, mut valueindex: u32,
+    pub fn add_entry(&mut self, catindex: u16, subkeyindex: u16, value: &[u8],
                      timestamp: f64, expiring: bool) -> io::Result<()> {
-        let mut msg = [b'\n'; 16];
+        let mut msg = [0; 16];
+        let mut length = value.len() as u32;
         if expiring {
-            valueindex |= FLAG_EXPIRING;
+            length |= FLAG_EXPIRING;
         }
-        LE::write_u32(&mut msg[0..], valueindex);
+        LE::write_u32(&mut msg[0..], length);
         LE::write_u16(&mut msg[4..], catindex);
         LE::write_u16(&mut msg[6..], subkeyindex);
         LE::write_f64(&mut msg[8..], timestamp);
-        self.file.write(&msg).map(|_| ())
+        self.file.write(&msg)?;
+        self.file.write(value)?;
+        Ok(())
     }
 }
