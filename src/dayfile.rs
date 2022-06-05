@@ -28,15 +28,16 @@ use byteorder::{LE, ByteOrder};
 use fs_err::File;
 
 const FLAG_EXPIRING: u32 = 1 << 31;
-const FLAG_LITERAL: u32 = 1 << 30;
+const FLAG_ENCODED: u32 = 1 << 30;
 
 pub struct DayFile {
     file: BufWriter<File>,
+    buf: Vec<u8>,
 }
 
 impl DayFile {
     pub fn create(path: &Path) -> io::Result<Self> {
-        Ok(Self { file: BufWriter::new(File::create(path)?) })
+        Ok(Self { file: BufWriter::new(File::create(path)?), buf: vec![] })
     }
 
     pub fn add_entry(&mut self, catindex: u16, subkey: &[u8], value: &[u8],
@@ -45,29 +46,59 @@ impl DayFile {
         let mut msg = [0; 16];
         let length = value.len();
 
-        let index_value = subkey == b"status" ||
-            subkey == b"classes" ||
-            subkey == b"description" ||
-            value.get(0) == Some(&b'\'') ||
-            length <= 4;
-
-        let mut firstfield = if index_value {
-            dicts.value_index(value)
-        } else {
-            length as u32 | FLAG_LITERAL
-        };
+        let mut firstfield = length as u32;
         if expiring {
             firstfield |= FLAG_EXPIRING;
         }
+
+        let wvalue = if enc(value, &mut self.buf).is_some() {
+            firstfield |= FLAG_ENCODED;
+            &self.buf
+        } else {
+            value
+        };
+
         let skindex = dicts.key_index(subkey);
         LE::write_u32(&mut msg[0..], firstfield);
         LE::write_u16(&mut msg[4..], catindex);
         LE::write_u16(&mut msg[6..], skindex);
         LE::write_f64(&mut msg[8..], timestamp);
         self.file.write(&msg)?;
-        if !index_value {
-            self.file.write(value)?;
-        }
+        self.file.write(wvalue)?;
         Ok(())
     }
+}
+
+fn map(b: u8) -> Option<u8> {
+    match b {
+        b'0' => Some(0),
+        b'1' => Some(1),
+        b'2' => Some(2),
+        b'3' => Some(3),
+        b'4' => Some(4),
+        b'5' => Some(5),
+        b'6' => Some(6),
+        b'7' => Some(7),
+        b'8' => Some(8),
+        b'9' => Some(9),
+        b'.' => Some(10),
+        b',' => Some(11),
+        b'-' => Some(12),
+        b'[' => Some(13),
+        b']' => Some(14),
+        b'e' => Some(15),
+        _ => None
+    }
+}
+
+fn enc(value: &[u8], buf: &mut Vec<u8>) -> Option<()> {
+    buf.clear();
+    for chunk in value.chunks(2) {
+        let mut accu = map(chunk[0])?;
+        if let Some(b) = chunk.get(1) {
+            accu |= map(*b)? << 4;
+        }
+        buf.push(accu);
+    }
+    Some(())
 }
