@@ -28,8 +28,7 @@ use byteorder::{LE, ByteOrder};
 use fs_err::File;
 
 const FLAG_EXPIRING: u32 = 1 << 31;
-// currently unused
-// const FLAG_LITERAL: u32 = 1 << 30;
+const FLAG_LITERAL: u32 = 1 << 30;
 
 pub struct DayFile {
     file: BufWriter<File>,
@@ -40,19 +39,28 @@ impl DayFile {
         Ok(Self { file: BufWriter::new(File::create(path)?) })
     }
 
-    pub fn add_entry(&mut self, catindex: u16, subkeyindex: u16, value: &[u8],
-                     timestamp: f64, expiring: bool) -> io::Result<()> {
+    pub fn add_entry(&mut self, catindex: u16, subkey: &[u8], value: &[u8],
+                     timestamp: f64, expiring: bool, dicts: &mut crate::dicts::Dicts
+    ) -> io::Result<()> {
         let mut msg = [0; 16];
-        let mut length = value.len() as u32;
+        let length = value.len();
+        let mut firstfield = if length > 12 {
+            length as u32 | FLAG_LITERAL
+        } else {
+            dicts.value_index(value)
+        };
         if expiring {
-            length |= FLAG_EXPIRING;
+            firstfield |= FLAG_EXPIRING;
         }
-        LE::write_u32(&mut msg[0..], length);
+        let skindex = dicts.key_index(subkey);
+        LE::write_u32(&mut msg[0..], firstfield);
         LE::write_u16(&mut msg[4..], catindex);
-        LE::write_u16(&mut msg[6..], subkeyindex);
+        LE::write_u16(&mut msg[6..], skindex);
         LE::write_f64(&mut msg[8..], timestamp);
         self.file.write(&msg)?;
-        self.file.write(value)?;
+        if length > 12 {
+            self.file.write(value)?;
+        }
         Ok(())
     }
 }

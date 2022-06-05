@@ -104,11 +104,9 @@ fn process_day(ddir: &Path, outfile: &Path, dicts: &mut Dicts) -> Result<()> {
                 if let (Some(subkey), Some(tstamp), Some(op), Some(value)) =
                     (parts.next(), parts.next(), parts.next(), parts.next())
                 {
-                    let subkeyindex = dicts.key_index(subkey.as_bytes());
                     let timestamp = tstamp.parse().expect("valid timestamp");
-                    let expiring = op == "-";
-                    dayfile.add_entry(catindex, subkeyindex, value.as_bytes(),
-                                      timestamp, expiring).expect("adding succeeds");
+                    dayfile.add_entry(catindex, subkey.as_bytes(), value.as_bytes(),
+                                      timestamp, op == "-", dicts).expect("adding succeeds");
                 }
                 line.clear();
             }
