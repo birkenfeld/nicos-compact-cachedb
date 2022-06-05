@@ -26,9 +26,11 @@ use std::io::{self, Write, BufWriter};
 use std::path::Path;
 use byteorder::{LE, ByteOrder};
 use fs_err::File;
+use crate::dicts::Dicts;
 
 const FLAG_EXPIRING: u32 = 1 << 31;
 const FLAG_ENCODED: u32 = 1 << 30;
+const FLAG_INDEXED: u32 = 1 << 29;
 
 pub struct DayFile {
     file: BufWriter<File>,
@@ -40,28 +42,25 @@ impl DayFile {
         Ok(Self { file: BufWriter::new(File::create(path)?), buf: vec![] })
     }
 
-    pub fn add_entry(&mut self, catindex: u16, subkey: &[u8], value: &[u8],
-                     timestamp: f64, expiring: bool, dicts: &mut crate::dicts::Dicts
-    ) -> io::Result<()> {
+    pub fn add_entry(&mut self, catindex: u16, subkeyindex: u16, value: &[u8],
+                     timestamp: f64, expiring: bool, dicts: &mut Dicts) -> io::Result<()> {
         let mut msg = [0; 16];
         let length = value.len();
 
-        let mut firstfield = length as u32;
+        let (mut firstfield, wvalue) = if value.starts_with(b"'") || value.starts_with(b"(") || value == b"-" {
+            (dicts.value_index(value) | FLAG_INDEXED, &b""[..])
+        } else if let Some(encoded) = enc(value, &mut self.buf) {
+            (length as u32 | FLAG_ENCODED, encoded)
+        } else {
+            (length as u32, value)
+        };
         if expiring {
             firstfield |= FLAG_EXPIRING;
         }
 
-        let wvalue = if enc(value, &mut self.buf).is_some() {
-            firstfield |= FLAG_ENCODED;
-            &self.buf
-        } else {
-            value
-        };
-
-        let skindex = dicts.key_index(subkey);
         LE::write_u32(&mut msg[0..], firstfield);
         LE::write_u16(&mut msg[4..], catindex);
-        LE::write_u16(&mut msg[6..], skindex);
+        LE::write_u16(&mut msg[6..], subkeyindex);
         LE::write_f64(&mut msg[8..], timestamp);
         self.file.write(&msg)?;
         self.file.write(wvalue)?;
@@ -69,7 +68,7 @@ impl DayFile {
     }
 }
 
-fn map(b: u8) -> Option<u8> {
+fn enc_map(b: u8) -> Option<u8> {
     match b {
         b'0' => Some(0),
         b'1' => Some(1),
@@ -91,14 +90,28 @@ fn map(b: u8) -> Option<u8> {
     }
 }
 
-fn enc(value: &[u8], buf: &mut Vec<u8>) -> Option<()> {
+fn enc<'a>(value: &[u8], buf: &'a mut Vec<u8>) -> Option<&'a [u8]> {
     buf.clear();
     for chunk in value.chunks(2) {
-        let mut accu = map(chunk[0])?;
-        if let Some(b) = chunk.get(1) {
-            accu |= map(*b)? << 4;
+        let mut accu = enc_map(chunk[0])?;
+        if let Some(second) = chunk.get(1) {
+            accu |= enc_map(*second)? << 4;
         }
         buf.push(accu);
     }
-    Some(())
+    Some(buf)
+}
+
+fn dec_map(b: u8) -> u8 {
+    b"0123456789.,-[]e"[b as usize]
+}
+
+fn dec<'a>(value: &[u8], len: usize, buf: &'a mut Vec<u8>) -> &'a [u8] {
+    buf.clear();
+    for byte in value {
+        buf.push(dec_map(byte & 0xF));
+        buf.push(dec_map(byte >> 4))
+    }
+    buf.truncate(len);
+    buf
 }
