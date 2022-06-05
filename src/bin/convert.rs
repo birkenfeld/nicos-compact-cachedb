@@ -89,36 +89,30 @@ fn process_year(year: u32, ydir: &Path, outdir: &Path, dicts: &mut Dicts) -> Res
 
 fn process_day(ddir: &Path, outfile: &Path, dicts: &mut Dicts) -> Result<()> {
     let mut dayfile = DayFile::create(outfile)?;
+    let mut line = String::new();
 
     for filename in ddir.fs_err_read_dir()? {
         let filename = filename?;
         if let Some(cat) = filename.file_name().to_str() {
             let catindex = dicts.key_index(cat.as_bytes().into());
-            let file = fs_err::File::open(&filename.path())?;
-            read_storefile(file, |parts| {
-                let subkey = parts[0];
-                let subkeyindex = dicts.key_index(subkey.as_bytes());
-                let expiring = parts[2] == "-";
-                let timestamp = parts[1].parse().expect("valid timestamp");
-                dayfile.add_entry(catindex, subkeyindex, parts[3].as_bytes(),
-                                  timestamp, expiring).expect("adding succeeds");
-            });
+            let mut file = BufReader::new(fs_err::File::open(&filename.path())?);
+            while let Ok(n) = file.read_line(&mut line) {
+                if n == 0 {
+                    break;
+                }
+                let mut parts = line.trim().splitn(4, '\t');
+                if let (Some(subkey), Some(tstamp), Some(op), Some(value)) =
+                    (parts.next(), parts.next(), parts.next(), parts.next())
+                {
+                    let subkeyindex = dicts.key_index(subkey.as_bytes());
+                    let timestamp = tstamp.parse().expect("valid timestamp");
+                    let expiring = op == "-";
+                    dayfile.add_entry(catindex, subkeyindex, value.as_bytes(),
+                                      timestamp, expiring).expect("adding succeeds");
+                }
+                line.clear();
+            }
         }
     }
     Ok(())
-}
-
-fn read_storefile<F: FnMut(Vec<&str>)>(fp: fs_err::File, mut f: F) {
-    let mut reader = BufReader::new(fp);
-    let mut line = String::new();
-    while let Ok(n) = reader.read_line(&mut line) {
-        if n == 0 {
-            break;
-        }
-        let parts = line.trim().split('\t').collect::<Vec<_>>();
-        if parts.len() == 4 {
-            f(parts);
-        }
-        line.clear();
-    }
 }
