@@ -46,9 +46,9 @@ impl DayFile {
         let length = value.len();
 
         let index_value = subkey == b"status" ||
-            subkey == b"_lastconfig_" ||
             subkey == b"classes" ||
             subkey == b"description" ||
+            value.get(0) == Some(&b'\'') ||
             length <= 4;
 
         let mut firstfield = if index_value {
