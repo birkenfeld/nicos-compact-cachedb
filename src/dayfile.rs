@@ -44,20 +44,20 @@ impl DayFile {
 
     pub fn add_entry(&mut self, catindex: u16, subkeyindex: u16, value: &[u8],
                      timestamp: f64, expiring: bool, dicts: &mut Dicts) -> io::Result<()> {
-        let mut msg = [0; 16];
-        let length = value.len();
-
-        let (mut firstfield, wvalue) = if value.starts_with(b"'") || value.starts_with(b"(") || value == b"-" {
+        let do_index = value.starts_with(b"'") || value.starts_with(b"(") || value == b"-";
+        let (mut firstfield, wvalue) = if do_index {
             (dicts.value_index(value) | FLAG_INDEXED, &b""[..])
         } else if let Some(encoded) = enc(value, &mut self.buf) {
-            (length as u32 | FLAG_ENCODED, encoded)
+            (value.len() as u32 | FLAG_ENCODED, encoded)
         } else {
-            (length as u32, value)
+            (value.len() as u32, value)
         };
+
         if expiring {
             firstfield |= FLAG_EXPIRING;
         }
 
+        let mut msg = [0; 16];
         LE::write_u32(&mut msg[0..], firstfield);
         LE::write_u16(&mut msg[4..], catindex);
         LE::write_u16(&mut msg[6..], subkeyindex);
